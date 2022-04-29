@@ -58,6 +58,7 @@ export type Bundle = {|
   internalizedAssetIds: Array<AssetId>,
   bundleBehavior?: ?BundleBehavior,
   needsStableName: boolean,
+  mainEntryAsset: ?Asset,
   size: number,
   sourceBundles: Array<NodeId>,
   target: Target,
@@ -128,7 +129,7 @@ function decorateLegacyGraph(
   // Step 1: Create bundle groups, bundles, and shared bundles and add assets to them
   for (let [bundleNodeId, idealBundle] of idealBundleGraph.nodes) {
     if (idealBundle === 'root') continue;
-    let [entryAsset] = [...idealBundle.assets];
+    let entryAsset = idealBundle.mainEntryAsset;
     let bundleGroup;
     let bundle;
 
@@ -671,16 +672,18 @@ function createIdealGraph(
         ) {
           continue;
         }
-        let [siblingBundleRoot] = [...bundleInGroup.assets];
-        // Assets directly connected to current bundleRoot
-        let assetsFromBundleRoot = reachableRoots
-          .getNodeIdsConnectedFrom(
-            reachableRoots.getNodeIdByContentKey(siblingBundleRoot.id),
-          )
-          .map(id => nullthrows(reachableRoots.getNode(id)));
 
-        for (let asset of [siblingBundleRoot, ...assetsFromBundleRoot]) {
-          available.add(asset);
+        for (let bundleRoot of bundleInGroup.assets) {
+          // Assets directly connected to current bundleRoot
+          let assetsFromBundleRoot = reachableRoots
+            .getNodeIdsConnectedFrom(
+              reachableRoots.getNodeIdByContentKey(bundleRoot.id),
+            )
+            .map(id => nullthrows(reachableRoots.getNode(id)));
+
+          for (let asset of [bundleRoot, ...assetsFromBundleRoot]) {
+            available.add(asset);
+          }
         }
       }
     }
@@ -854,6 +857,7 @@ function createBundle(opts: {|
       uniqueKey: opts.uniqueKey,
       assets: new Set(),
       internalizedAssetIds: [],
+      mainEntryAsset: null,
       size: 0,
       sourceBundles: [],
       target: opts.target,
@@ -869,6 +873,7 @@ function createBundle(opts: {|
     uniqueKey: opts.uniqueKey,
     assets: new Set([asset]),
     internalizedAssetIds: [],
+    mainEntryAsset: asset,
     size: asset.stats.size,
     sourceBundles: [],
     target: opts.target,
