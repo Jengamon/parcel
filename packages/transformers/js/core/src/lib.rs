@@ -37,11 +37,10 @@ use swc_ecmascript::parser::lexer::Lexer;
 use swc_ecmascript::parser::{EsConfig, PResult, Parser, StringInput, Syntax, TsConfig};
 use swc_ecmascript::preset_env::{preset_env, Mode::Entry, Targets, Version, Versions};
 use swc_ecmascript::transforms::fixer::paren_remover;
-use swc_ecmascript::transforms::resolver::resolver_with_mark;
 use swc_ecmascript::transforms::{
   compat::reserved_words::reserved_words, fixer, helpers, hygiene,
   optimization::simplify::dead_branch_remover, optimization::simplify::expr_simplifier,
-  pass::Optional, proposals::decorators, react, typescript,
+  pass::Optional, proposals::decorators, react, resolver, typescript,
 };
 use swc_ecmascript::visit::{FoldWith, VisitWith};
 
@@ -266,6 +265,7 @@ pub fn transform(config: Config) -> Result<TransformResult, std::io::Error> {
               };
             }
 
+            let unresolved_mark = Mark::fresh(Mark::root());
             let global_mark = Mark::fresh(Mark::root());
             let ignore_mark = Mark::fresh(Mark::root());
             module = {
@@ -296,7 +296,7 @@ pub fn transform(config: Config) -> Result<TransformResult, std::io::Error> {
                   typescript::strip(global_mark),
                   config.is_type_script && !config.is_jsx
                 ),
-                resolver_with_mark(global_mark),
+                resolver(unresolved_mark, global_mark, config.is_type_script),
                 Optional::new(
                   react::react(
                     source_map.clone(),
@@ -348,8 +348,8 @@ pub fn transform(config: Config) -> Result<TransformResult, std::io::Error> {
                 paren_remover(Some(&comments)),
                 // Simplify expressions and remove dead branches so that we
                 // don't include dependencies inside conditionals that are always false.
-                expr_simplifier(Default::default()),
-                dead_branch_remover(),
+                expr_simplifier(unresolved_mark, Default::default()),
+                dead_branch_remover(unresolved_mark),
                 // Inline Node fs.readFileSync calls
                 Optional::new(
                   inline_fs(
@@ -536,7 +536,6 @@ fn parse(
     Syntax::Es(EsConfig {
       jsx: config.is_jsx,
       export_default_from: true,
-      static_blocks: true,
       decorators: config.decorators,
       ..Default::default()
     })
