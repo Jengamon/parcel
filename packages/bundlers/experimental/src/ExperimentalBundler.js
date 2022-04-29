@@ -82,9 +82,19 @@ type DependencyBundleGraph = ContentGraph<
     |},
   number,
 >;
-type IdealGraph = {|
+
+const BundleGraphEdgeTypes = {
+  parallel: 1,
+};
+
+type IdealBundleGraph = Graph<
+  Bundle | 'root',
+  $Values<typeof BundleGraphEdgeTypes>,
+>;
+
+type IdealGraphStructures = {|
   dependencyBundleGraph: DependencyBundleGraph,
-  bundleGraph: Graph<Bundle | 'root'>,
+  bundleGraph: IdealBundleGraph,
   bundleGroupBundleIds: Array<NodeId>,
   assetReference: DefaultMap<Asset, Array<[Dependency, Bundle]>>,
   sharedToSourceBundleIds: Map<NodeId, Array<NodeId>>,
@@ -102,7 +112,7 @@ export default (new Bundler({
 }): Bundler);
 
 function decorateLegacyGraph(
-  idealGraph: IdealGraph,
+  idealGraph: IdealGraphStructures,
   bundleGraph: MutableBundleGraph,
 ): void {
   let idealBundleToLegacyBundle: Map<Bundle, LegacyBundle> = new Map();
@@ -267,7 +277,7 @@ function decorateLegacyGraph(
 function createIdealGraph(
   assetGraph: MutableBundleGraph,
   config: ResolvedBundlerConfig,
-): IdealGraph {
+): IdealGraphStructures {
   // Asset to the bundle and group it's an entry of
   let bundleRoots: Map<BundleRoot, [NodeId, NodeId]> = new Map();
   let bundles: Map<string, NodeId> = new Map();
@@ -277,7 +287,7 @@ function createIdealGraph(
     Array<[Dependency, Bundle]>,
   > = new DefaultMap(() => []);
 
-  let bundleGraph: Graph<Bundle | 'root'> = new Graph();
+  let bundleGraph: IdealBundleGraph = new Graph();
   let stack: Array<[BundleRoot, NodeId]> = [];
 
   // bundleGraph that models bundleRoots and async deps only
@@ -319,7 +329,11 @@ function createIdealGraph(
       rootNodeId,
       asyncBundleRootGraph.addNodeByContentKey(asset.id, asset),
     );
-    bundleGraph.addEdge(bundleGraphRootNodeId, nodeId);
+    bundleGraph.addEdge(
+      bundleGraphRootNodeId,
+      nodeId,
+      BundleGraphEdgeTypes.parallel,
+    );
 
     dependencyBundleGraph.addEdge(
       dependencyBundleGraph.addNodeByContentKeyIfNeeded(dependency.id, {
@@ -399,7 +413,11 @@ function createIdealGraph(
               bundles.set(childAsset.id, bundleId);
               bundleRoots.set(childAsset, [bundleId, bundleId]);
               bundleGroupBundleIds.push(bundleId);
-              bundleGraph.addEdge(bundleGraphRootNodeId, bundleId);
+              bundleGraph.addEdge(
+                bundleGraphRootNodeId,
+                bundleId,
+                BundleGraphEdgeTypes.parallel,
+              );
             } else {
               bundle = nullthrows(bundleGraph.getNode(bundleId));
               invariant(bundle !== 'root');
@@ -491,7 +509,11 @@ function createIdealGraph(
 
             bundles.set(childAsset.id, bundleId);
             bundleRoots.set(childAsset, [bundleId, bundleGroupNodeId]);
-            bundleGraph.addEdge(bundleGraphRootNodeId, bundleId);
+            bundleGraph.addEdge(
+              bundleGraphRootNodeId,
+              bundleId,
+              BundleGraphEdgeTypes.parallel,
+            );
 
             if (bundleId != bundleGroupNodeId) {
               dependencyBundleGraph.addEdge(
@@ -514,7 +536,11 @@ function createIdealGraph(
 
               // Add an edge from the bundle group entry to the new bundle.
               // This indicates that the bundle is loaded together with the entry
-              bundleGraph.addEdge(bundleGroupNodeId, bundleId);
+              bundleGraph.addEdge(
+                bundleGroupNodeId,
+                bundleId,
+                BundleGraphEdgeTypes.parallel,
+              );
             }
 
             assetReference.get(childAsset).push([dependency, bundle]);
@@ -750,7 +776,11 @@ function createIdealGraph(
 
         for (let sourceBundleId of sourceBundles) {
           if (bundleId !== sourceBundleId) {
-            bundleGraph.addEdge(sourceBundleId, bundleId);
+            bundleGraph.addEdge(
+              sourceBundleId,
+              bundleId,
+              BundleGraphEdgeTypes.parallel,
+            );
           }
         }
         sharedToSourceBundleIds.set(bundleId, sourceBundles);
@@ -849,7 +879,7 @@ function createBundle(opts: {|
   };
 }
 
-function removeBundle(bundleGraph: Graph<Bundle | 'root'>, bundleId: NodeId) {
+function removeBundle(bundleGraph: IdealBundleGraph, bundleId: NodeId) {
   let bundle = nullthrows(bundleGraph.getNode(bundleId));
   invariant(bundle !== 'root');
 
